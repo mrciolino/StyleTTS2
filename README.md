@@ -15,7 +15,7 @@ sudo apt-get install espeak
 
 3. Install the package using pip:
 ```bash
-pip install styletts2
+pip install git+https://github.com/mrciolino/StyleTTS2.git
 ```
 
 4. Try it out either in Python shell or in your code: 
