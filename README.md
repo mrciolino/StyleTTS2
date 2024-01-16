@@ -8,11 +8,17 @@ This package makes StyleTTS2, an approach to human-level text-to-speech, accessi
 ## Quick Start
 1. Ensure you are running Python >= 3.9 (currently supports 3.9, 3.10 due to some other library dependencies)
 
-2. Install the package using pip:
+2. install espeack if you want to use it as a phoneme converter (can use gruut instead (included)) 
+```bash
+sudo apt-get install espeak
+```
+
+3. Install the package using pip:
 ```bash
 pip install styletts2
 ```
-3. Try it out either in Python shell or in your code: 
+
+4. Try it out either in Python shell or in your code: 
 ```python
 from styletts2 import tts
 
