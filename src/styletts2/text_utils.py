@@ -15,7 +15,6 @@ for i in range(len((symbols))):
 class TextCleaner:
     def __init__(self, dummy=None):
         self.word_index_dictionary = dicts
-        print(len(dicts))
     def __call__(self, text):
         indexes = []
         for char in text:
