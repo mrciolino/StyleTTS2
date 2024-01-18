@@ -76,9 +76,9 @@ def phoneme_check(defined_converter):
             phoneme_converter = phonemizer.backend.EspeakBackend(language="en-us", preserve_punctuation=True, with_stress=True)
             phoneme_name = "espeak"
     except FileNotFoundError:
-        if "win" in sys.platform:
-            phoneme_converter = PhonemeConverterFactory.load_phoneme_converter(defined_converter)
+        if "win" in sys.platform and defined_converter == "espeak":
             phoneme_name = "gruut"
+            phoneme_converter = PhonemeConverterFactory.load_phoneme_converter(phoneme_name)
             print("Warning: espeak phoneme converter is not supported on Windows. Using gruut instead.")
         else:
             raise RuntimeError("espeak-ng is not installed on your system. Run `sudo apt install espeak-ng`.")
