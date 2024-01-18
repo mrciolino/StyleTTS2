@@ -1,16 +1,24 @@
-from nltk.tokenize import word_tokenize
-import nltk
+from .Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
+from .models import load_F0_models, load_ASR_models, build_model
+from .utils import phoneme_check, recursive_munch
+from .Utils.PLBERT.util import load_plbert
+from .text_utils import TextCleaner
 
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from cached_path import cached_path, set_cache_dir
+from nltk.tokenize import word_tokenize
 from pathlib import Path
+import torchaudio
+import warnings
+import logging
 import librosa
 import scipy
 import torch
-import torchaudio
-from cached_path import cached_path, set_cache_dir
+import nltk
+import yaml
+import os
 
 torch.manual_seed(0)
-torch.backends.cudnn.benchmark = False
-torch.backends.cudnn.deterministic = True
 
 import random
 
@@ -20,20 +28,14 @@ import numpy as np
 
 np.random.seed(0)
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-import yaml
-import os
-
-from . import models
-from .utils import phoneme_check, recursive_munch
-from .text_utils import TextCleaner
-from .Utils.PLBERT.util import load_plbert
-from .Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
-
-import warnings
-
+# 
 warnings.filterwarnings("ignore")
-
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
+logging.basicConfig()
+logger = logging.getLogger()
+        
+# files to download
 LIBRI_TTS_CHECKPOINT_URL = "https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00020.pth"
 LIBRI_TTS_CONFIG_URL = "https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/config.yml?download=true"
 
@@ -45,8 +47,8 @@ BERT_CONFIG_URL = "https://github.com/yl4579/StyleTTS2/raw/main/Utils/PLBERT/con
 
 DEFAULT_TARGET_VOICE_URL = "https://styletts2.github.io/wavs/LJSpeech/OOD/GT/00001.wav"
 
+# params
 SINGLE_INFERENCE_MAX_LEN = 420
-
 to_mel = torchaudio.transforms.MelSpectrogram(n_mels=80, n_fft=2048, win_length=1200, hop_length=300)
 mean, std = -4, 4
 
@@ -76,16 +78,12 @@ def segment_text(text):
 
 
 class StyleTTS2:
-    def __init__(self, model_checkpoint_path=None, config_path=None, phoneme_converter=None, local=None):
-        self.model = None
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        if local:
-            os.makedirs(local, exist_ok=True)
-            set_cache_dir(local)
-
-        self.phoneme_converter = phoneme_check(phoneme_converter)
-        self.config = None
-        self.model_params = None
+    def __init__(self, model_checkpoint_path=None, config_path=None, phoneme_converter=None, local=None, device=None, debug=False):
+        logger.setLevel(logging.DEBUG) if debug else logger.setLevel(logging.WARN)
+        os.makedirs(local, exist_ok=True)
+        set_cache_dir(local)
+        self.phoneme_name, self.phoneme_converter = phoneme_check(phoneme_converter)
+        self.device = "cuda" if torch.cuda.is_available() and device != "cpu" else "cpu"
         self.model = self.load_model(model_path=model_checkpoint_path, config_path=config_path, folder=local)
 
         self.sampler = DiffusionSampler(
@@ -93,7 +91,7 @@ class StyleTTS2:
             sampler=ADPM2Sampler(),
             sigma_schedule=KarrasSchedule(sigma_min=0.0001, sigma_max=3.0, rho=9.0),  # empirical parameters
             clamp=False,
-        )
+        ).to(self.device)
 
     def load_model(self, model_path=None, config_path=None, folder=None):
         """
@@ -110,18 +108,18 @@ class StyleTTS2:
             if not os.path.exists(f"{folder}/tokenizers/punkt"):
                 try:
                     nltk.data.find("tokenizers/punkt")
-                    print("Using local NLTK data")
+                    logging.debug("Using local NLTK data")
                 except LookupError:
                     nltk.download("punkt", download_dir=f"{folder}")
             else:
-                print("Using local NLTK data")
+                logging.debug("Using local NLTK data")
 
         if not model_path or not Path(model_path).exists():
-            print("Invalid or missing model checkpoint path. Loading default model...")
+            logging.debug("Invalid or missing model checkpoint path. Loading default model...")
             model_path = cached_path(LIBRI_TTS_CHECKPOINT_URL)
 
         if not config_path or not Path(config_path).exists():
-            print("Invalid or missing config path. Loading default config...")
+            logging.debug("Invalid or missing config path. Loading default config...")
             config_path = cached_path(LIBRI_TTS_CONFIG_URL)
 
         self.config = yaml.safe_load(open(config_path))
@@ -129,20 +127,20 @@ class StyleTTS2:
         # load pretrained ASR model
         ASR_config = self.config.get("ASR_config", False)
         if not ASR_config or not Path(ASR_config).exists():
-            print("Invalid ASR config path. Loading default config...")
+            logging.debug("Invalid ASR config path. Loading default config...")
             ASR_config = cached_path(ASR_CONFIG_URL)
         ASR_path = self.config.get("ASR_path", False)
         if not ASR_path or not Path(ASR_path).exists():
-            print("Invalid ASR model checkpoint path. Loading default model...")
+            logging.debug("Invalid ASR model checkpoint path. Loading default model...")
             ASR_path = cached_path(ASR_CHECKPOINT_URL)
-        text_aligner = models.load_ASR_models(ASR_path, ASR_config)
+        text_aligner = load_ASR_models(ASR_path, ASR_config)
 
         # load pretrained F0 model
         F0_path = self.config.get("F0_path", False)
         if F0_path or not Path(F0_path).exists():
-            print("Invalid F0 model path. Loading default model...")
+            logging.debug("Invalid F0 model path. Loading default model...")
             F0_path = cached_path(F0_CHECKPOINT_URL)
-        pitch_extractor = models.load_F0_models(F0_path)
+        pitch_extractor = load_F0_models(F0_path)
 
         # load BERT model
         BERT_dir_path = self.config.get("PLBERT_dir", False)  # Directory at BERT_dir_path should contain PLBERT config.yml AND checkpoint
@@ -153,17 +151,17 @@ class StyleTTS2:
         else:
             plbert = load_plbert(BERT_dir_path)
 
+        logging.debug(f"Loading models with {self.phoneme_name} to {self.device}")
         self.model_params = recursive_munch(self.config["model_params"])
-        model = models.build_model(self.model_params, text_aligner, pitch_extractor, plbert)
+        model = build_model(self.model_params, text_aligner, pitch_extractor, plbert)
         _ = [model[key].eval() for key in model]
         _ = [model[key].to(self.device) for key in model]
-
-        params_whole = torch.load(model_path, map_location="cpu")
+        params_whole = torch.load(model_path, map_location=self.device)
         params = params_whole["net"]
 
         for key in model:
             if key in params:
-                print("%s loaded" % key)
+                logging.debug("%s loaded" % key)
                 try:
                     model[key].load_state_dict(params[key])
                 except:

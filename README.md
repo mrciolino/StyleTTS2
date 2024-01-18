@@ -20,23 +20,23 @@ pip install git+https://github.com/mrciolino/StyleTTS2.git
 
 4. Try it out either in Python shell or in your code: 
 ```python
-from styletts2 import tts
-
 model = tts.StyleTTS2(
-    phoneme_converter="espeak",  # "espeak", "gruut
-    local="models/",  # where cached_path will store/load downloaded files
+    phoneme_converter="espeak",  # "espeak" > "gruut"
+    local="models/",  # where cached_path will store downloaded files
+    device="cuda",  # "cuda" > "cpu"
 )
 
+ref_s = model.compute_style("voices/m-us-2.wav")  # filepath to .wav file
 
 out = model.inference(
-    "Hello there, I am now a python package. Hello.",
-    target_voice_path="voices/m-us-2.wav",
+    "Hello there, I am now a python package.",
     output_wav_file="test.wav",
     alpha=0.3,
-    beta=0.7,
-    diffusion_steps=5,
+    beta=0.3,
+    diffusion_steps=10,
     embedding_scale=1,
-    speed=1.0,
+    speed=1.4,
+    ref_s=ref_s,
 )
 ```
 
@@ -51,10 +51,11 @@ class StyleTTS2(model_checkpoint_path=None,
 
 | Parameter           | Description                                                            |
 |----------------------|------------------------------------------------------------------------|
-| model_checkpoint_path | **Not Needed when local is set**. Path to StyleTTS2 checkpoint file. If None, will download the LibriTTS checkpoint. |
-| config_path          | **Not Needed when local is set**. Path to StyleTTS2 config file. If None, will download the LibriTTS config file. |
 | phoneme_converter    | Phoneme converter to use. Currently supports "espeak" and "gruut".     |
 | local                | Path to local directory to store downloaded files. If None, will use default cache directory. |
+| debug                | If True, will print out more information.                              |
+| model_checkpoint_path | **Not Needed when local is set**. Path to StyleTTS2 checkpoint file. If None, will download the LibriTTS checkpoint. |
+| config_path          | **Not Needed when local is set**. Path to StyleTTS2 config file. If None, will download the LibriTTS config file. |
 
 ```
 def inference(self,
