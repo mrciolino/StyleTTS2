@@ -20,6 +20,8 @@ pip install git+https://github.com/mrciolino/StyleTTS2.git
 
 4. Try it out either in Python shell or in your code: 
 ```python
+from styletts2 import tts
+
 model = tts.StyleTTS2(
     phoneme_converter="espeak",  # "espeak" > "gruut"
     local="models/",  # where cached_path will store downloaded files
