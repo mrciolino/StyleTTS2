@@ -71,6 +71,8 @@ class StyleTTS2:
         download_file(BERT_CHECKPOINT_URL, f"{target_dir}/PLBERT/step_1000000.t7", verbose=verbose)
         download_file(BERT_CONFIG_URL, f"{target_dir}/PLBERT/config.yml", verbose=verbose)
         download_file(F0_CHECKPOINT_URL, f"{target_dir}/JDC/bst.t7", verbose=verbose)
+        
+        
 
     def load_model(self, model_path=None, config_path=None, folder=None):
         """
@@ -87,7 +89,9 @@ class StyleTTS2:
             if not os.path.exists(f"{folder}/tokenizers/punkt"):
                 try:
                     nltk.data.find("tokenizers/punkt")
-                    logging.debug("Using local NLTK data")
+                    if not os.path.exists(f"{folder}/tokenizers/punkt/"):
+                        nltk.download("punkt", download_dir=f"{folder}")
+                    logging.debug("Found cachce data but downloading to local folder.")
                 except LookupError:
                     nltk.download("punkt", download_dir=f"{folder}")
             else:
