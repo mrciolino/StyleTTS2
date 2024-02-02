@@ -71,8 +71,6 @@ class StyleTTS2:
         download_file(BERT_CHECKPOINT_URL, f"{target_dir}/PLBERT/step_1000000.t7", verbose=verbose)
         download_file(BERT_CONFIG_URL, f"{target_dir}/PLBERT/config.yml", verbose=verbose)
         download_file(F0_CHECKPOINT_URL, f"{target_dir}/JDC/bst.t7", verbose=verbose)
-        
-        
 
     def load_model(self, model_path=None, config_path=None, folder=None):
         """
