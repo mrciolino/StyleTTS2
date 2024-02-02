@@ -2,9 +2,8 @@ from src.styletts2 import tts
 
 model = tts.StyleTTS2(
     phoneme_converter="espeak",  # "espeak" > "gruut"
-    local="models/",  # where cached_path will store downloaded files
+    local="models",  # where to store the model files
     device="cuda",  # "cuda" > "cpu"
-    debug=False,
 )
 
 ref_s = model.compute_style("voices/m-us-2.wav")  # filepath to .wav file

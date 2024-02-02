@@ -1,14 +1,11 @@
+from .utils import phoneme_check, recursive_munch, TextCleaner, download_file, segment_text, preprocess, length_to_mask
 from .Modules.diffusion.sampler import DiffusionSampler, ADPM2Sampler, KarrasSchedule
 from .models import load_F0_models, load_ASR_models, build_model
-from .utils import phoneme_check, recursive_munch
 from .Utils.PLBERT.util import load_plbert
-from .text_utils import TextCleaner
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from cached_path import cached_path, set_cache_dir
 from nltk.tokenize import word_tokenize
+from cached_path import cached_path
 from pathlib import Path
-import torchaudio
 import warnings
 import logging
 import librosa
@@ -18,72 +15,42 @@ import nltk
 import yaml
 import os
 
+# set seeds
 torch.manual_seed(0)
-
 import random
 
 random.seed(0)
-
 import numpy as np
 
 np.random.seed(0)
 
-# 
+# set logging
 warnings.filterwarnings("ignore")
 torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 logging.basicConfig()
 logger = logging.getLogger()
-        
+
 # files to download
 LIBRI_TTS_CHECKPOINT_URL = "https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00020.pth"
 LIBRI_TTS_CONFIG_URL = "https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/config.yml?download=true"
-
 ASR_CHECKPOINT_URL = "https://github.com/yl4579/StyleTTS2/raw/main/Utils/ASR/epoch_00080.pth"
 ASR_CONFIG_URL = "https://github.com/yl4579/StyleTTS2/raw/main/Utils/ASR/config.yml"
 F0_CHECKPOINT_URL = "https://github.com/yl4579/StyleTTS2/raw/main/Utils/JDC/bst.t7"
 BERT_CHECKPOINT_URL = "https://github.com/yl4579/StyleTTS2/raw/main/Utils/PLBERT/step_1000000.t7"
 BERT_CONFIG_URL = "https://github.com/yl4579/StyleTTS2/raw/main/Utils/PLBERT/config.yml"
-
 DEFAULT_TARGET_VOICE_URL = "https://styletts2.github.io/wavs/LJSpeech/OOD/GT/00001.wav"
 
 # params
 SINGLE_INFERENCE_MAX_LEN = 420
-to_mel = torchaudio.transforms.MelSpectrogram(n_mels=80, n_fft=2048, win_length=1200, hop_length=300)
-mean, std = -4, 4
-
-
-def length_to_mask(lengths):
-    mask = torch.arange(lengths.max()).unsqueeze(0).expand(lengths.shape[0], -1).type_as(lengths)
-    mask = torch.gt(mask + 1, lengths.unsqueeze(1))
-    return mask
-
-
-def preprocess(wave):
-    wave_tensor = torch.from_numpy(wave).float()
-    mel_tensor = to_mel(wave_tensor)
-    mel_tensor = (torch.log(1e-5 + mel_tensor.unsqueeze(0)) - mean) / std
-    return mel_tensor
-
-
-def segment_text(text):
-    splitter = RecursiveCharacterTextSplitter(
-        separators=["\n\n", "\n", " ", ""],
-        chunk_size=SINGLE_INFERENCE_MAX_LEN,
-        chunk_overlap=0,
-        length_function=len,
-    )
-    segments = splitter.split_text(text)
-    return segments
 
 
 class StyleTTS2:
     def __init__(self, model_checkpoint_path=None, config_path=None, phoneme_converter=None, local=None, device=None, debug=False):
         logger.setLevel(logging.DEBUG) if debug else logger.setLevel(logging.WARN)
-        os.makedirs(local, exist_ok=True)
-        set_cache_dir(local)
         self.phoneme_name, self.phoneme_converter = phoneme_check(phoneme_converter)
         self.device = "cuda" if torch.cuda.is_available() and device != "cpu" else "cpu"
+        self.download_files(local) if local else None
         self.model = self.load_model(model_path=model_checkpoint_path, config_path=config_path, folder=local)
 
         self.sampler = DiffusionSampler(
@@ -92,6 +59,18 @@ class StyleTTS2:
             sigma_schedule=KarrasSchedule(sigma_min=0.0001, sigma_max=3.0, rho=9.0),  # empirical parameters
             clamp=False,
         ).to(self.device)
+
+    def download_files(self, target_dir="audio/models/", verbose=False):
+        """
+        Downloads default checkpoints to local folder if not present.
+        """
+        download_file(ASR_CHECKPOINT_URL, f"{target_dir}/ASR/epoch_00080.pth", verbose=verbose)
+        download_file(ASR_CONFIG_URL, f"{target_dir}/ASR/config.yml", verbose=verbose)
+        download_file(LIBRI_TTS_CHECKPOINT_URL, f"{target_dir}/LibriTTS/epochs_2nd_00020.pth", verbose=verbose)
+        download_file(LIBRI_TTS_CONFIG_URL, f"{target_dir}/LibriTTS/config.yml", verbose=verbose)
+        download_file(BERT_CHECKPOINT_URL, f"{target_dir}/PLBERT/step_1000000.t7", verbose=verbose)
+        download_file(BERT_CONFIG_URL, f"{target_dir}/PLBERT/config.yml", verbose=verbose)
+        download_file(F0_CHECKPOINT_URL, f"{target_dir}/JDC/bst.t7", verbose=verbose)
 
     def load_model(self, model_path=None, config_path=None, folder=None):
         """
@@ -114,42 +93,51 @@ class StyleTTS2:
             else:
                 logging.debug("Using local NLTK data")
 
-        if not model_path or not Path(model_path).exists():
-            logging.debug("Invalid or missing model checkpoint path. Loading default model...")
-            model_path = cached_path(LIBRI_TTS_CHECKPOINT_URL)
-
-        if not config_path or not Path(config_path).exists():
-            logging.debug("Invalid or missing config path. Loading default config...")
-            config_path = cached_path(LIBRI_TTS_CONFIG_URL)
-
-        self.config = yaml.safe_load(open(config_path))
-
-        # load pretrained ASR model
-        ASR_config = self.config.get("ASR_config", False)
-        if not ASR_config or not Path(ASR_config).exists():
-            logging.debug("Invalid ASR config path. Loading default config...")
-            ASR_config = cached_path(ASR_CONFIG_URL)
-        ASR_path = self.config.get("ASR_path", False)
-        if not ASR_path or not Path(ASR_path).exists():
-            logging.debug("Invalid ASR model checkpoint path. Loading default model...")
-            ASR_path = cached_path(ASR_CHECKPOINT_URL)
-        text_aligner = load_ASR_models(ASR_path, ASR_config)
-
-        # load pretrained F0 model
-        F0_path = self.config.get("F0_path", False)
-        if F0_path or not Path(F0_path).exists():
-            logging.debug("Invalid F0 model path. Loading default model...")
-            F0_path = cached_path(F0_CHECKPOINT_URL)
-        pitch_extractor = load_F0_models(F0_path)
-
-        # load BERT model
-        BERT_dir_path = self.config.get("PLBERT_dir", False)  # Directory at BERT_dir_path should contain PLBERT config.yml AND checkpoint
-        if not BERT_dir_path or not Path(BERT_dir_path).exists():
-            BERT_config_path = cached_path(BERT_CONFIG_URL)
-            BERT_checkpoint_path = cached_path(BERT_CHECKPOINT_URL)
-            plbert = load_plbert(None, config_path=BERT_config_path, checkpoint_path=BERT_checkpoint_path)
+        # load model paths
+        if folder:
+            model_path = f"{folder}/LibriTTS/epochs_2nd_00020.pth"
+            config_path = f"{folder}/LibriTTS/config.yml"
+            ASR_path = f"{folder}/ASR/epoch_00080.pth"
+            ASR_config = f"{folder}/ASR/config.yml"
+            F0_path = f"{folder}/JDC/bst.t7"
+            BERT_dir_path = f"{folder}/PLBERT"
+            self.config = yaml.safe_load(open(config_path))
         else:
-            plbert = load_plbert(BERT_dir_path)
+            # get nltk
+            nltk.download("punkt")
+            # get libre model path
+            if not model_path or not Path(model_path).exists():
+                logging.debug("Invalid or missing model checkpoint path. Loading default model...")
+                model_path = cached_path(LIBRI_TTS_CHECKPOINT_URL)
+            if not config_path or not Path(config_path).exists():
+                logging.debug("Invalid or missing config path. Loading default config...")
+                config_path = cached_path(LIBRI_TTS_CONFIG_URL)
+            self.config = yaml.safe_load(open(config_path))
+            # get ASR path
+            ASR_config = self.config.get("ASR_config", False)
+            if not ASR_config or not Path(ASR_config).exists():
+                logging.debug("Invalid ASR config path. Loading default config...")
+                ASR_config = cached_path(ASR_CONFIG_URL)
+            ASR_path = self.config.get("ASR_path", False)
+            if not ASR_path or not Path(ASR_path).exists():
+                logging.debug("Invalid ASR model checkpoint path. Loading default model...")
+                ASR_path = cached_path(ASR_CHECKPOINT_URL)
+            # get F0 path
+            F0_path = self.config.get("F0_path", False)
+            if F0_path or not Path(F0_path).exists():
+                logging.debug("Invalid F0 model path. Loading default model...")
+                F0_path = cached_path(F0_CHECKPOINT_URL)
+            # get PLBERT path
+            BERT_dir_path = self.config.get("PLBERT_dir", False)  # Directory at BERT_dir_path should contain PLBERT config.yml AND checkpoint
+            if not BERT_dir_path or not Path(BERT_dir_path).exists():
+                BERT_config_path = cached_path(BERT_CONFIG_URL)
+                BERT_checkpoint_path = cached_path(BERT_CHECKPOINT_URL)
+                plbert = load_plbert(None, config_path=BERT_config_path, checkpoint_path=BERT_checkpoint_path)
+
+        # load the models
+        text_aligner = load_ASR_models(ASR_path, ASR_config)
+        pitch_extractor = load_F0_models(F0_path)
+        plbert = load_plbert(BERT_dir_path) if folder else plbert
 
         logging.debug(f"Loading models with {self.phoneme_name} to {self.device}")
         self.model_params = recursive_munch(self.config["model_params"])
