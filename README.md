@@ -3,7 +3,8 @@
 This package makes StyleTTS2, an approach to human-level text-to-speech, accessible with an inference module. It is based on the [original StyleTTS2 implementation](https://github.com/yl4579/StyleTTS2) and the [orginal StyleTTS2 Package](https://github.com/sidharthrajaram/StyleTTS2) with the following changes:
 
 * This package allows the espeak backend and the gruut backend to be used interchangeably. 
-* It also allows the user to specify a local directory to store downloaded files to use for air-gapped systems.
+* It also allows the user to specify a local directory to store downloaded files to use offline.
+* Implments a speed parameter to control the speed of the generated speech by modifying the predicted duration.
 
 ## Quick Start
 1. Ensure you are running Python >= 3.9 (currently supports 3.9, 3.10 due to some other library dependencies)
@@ -24,7 +25,7 @@ from styletts2 import tts
 
 model = tts.StyleTTS2(
     phoneme_converter="espeak",  # "espeak" > "gruut"
-    local="models/",  # where cached_path will store downloaded files
+    local="models",  # where to store the model files
     device="cuda",  # "cuda" > "cpu"
 )
 
