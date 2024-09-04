@@ -1,4 +1,4 @@
-from styletts2 import tts
+from src.styletts2 import tts
 
 model = tts.StyleTTS2(
     phoneme_converter="espeak",  # "espeak" > "gruut"
